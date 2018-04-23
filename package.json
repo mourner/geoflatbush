@@ -1,0 +1,16 @@
+{
+  "name": "geoflatbush",
+  "version": "0.0.0",
+  "main": "index",
+  "module": "index.mjs",
+  "author": "Vladimir Agafonkin <agafonkin@gmail.com>",
+  "license": "ISC",
+  "devDependencies": {
+    "all-the-cities": "^2.0.1",
+    "esm": "^3.0.20",
+    "flatbush": "^2.0.4"
+  },
+  "dependencies": {
+    "flatqueue": "^1.0.0"
+  }
+}
