@@ -1,7 +1,7 @@
 
 import cities from 'all-the-cities';
 import FlatBush from 'flatbush';
-import {around} from './';
+import {around} from './index.mjs';
 
 const n = cities.length;
 const k = 100000;

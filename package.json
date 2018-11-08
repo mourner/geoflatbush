@@ -6,7 +6,8 @@
   "author": "Vladimir Agafonkin <agafonkin@gmail.com>",
   "license": "ISC",
   "scripts": {
-    "test": "eslint index.mjs bench.mjs",
+    "pretest": "eslint index.mjs bench.mjs test.mjs",
+    "test": "node --experimental-modules test.mjs",
     "build": "rollup -c",
     "bench": "node --experimental-modules bench.mjs"
   },
@@ -20,7 +21,8 @@
     "flatbush": "^3.1.0",
     "rollup": "^0.67.0",
     "rollup-plugin-buble": "^0.19.4",
-    "rollup-plugin-node-resolve": "^3.4.0"
+    "rollup-plugin-node-resolve": "^3.4.0",
+    "tape": "^4.9.1"
   },
   "eslintConfig": {
     "extends": "mourner"
