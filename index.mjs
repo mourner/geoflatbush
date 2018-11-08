@@ -111,3 +111,7 @@ function greatCircleDistPart(lat, cosLat, sinLat, cosLngDelta) {
     const d = sinLat * Math.sin(lat * rad) + cosLat * Math.cos(lat * rad) * cosLngDelta;
     return Math.min(d, 1);
 }
+
+export function distance(lng, lat, lng2, lat2) {
+    return greatCircleDist(lng, lat, lng2, lat2, Math.cos(lat * rad), Math.sin(lat * rad));
+}
