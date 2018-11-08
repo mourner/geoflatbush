@@ -15,24 +15,24 @@ export function around(index, lng, lat, maxResults = Infinity, maxDistance = Inf
     const q = new FlatQueue();
 
     // index of the top tree node (the whole Earth)
-    let nodeIndex = index.data.length - 5;
+    let nodeIndex = index._boxes.length - 4;
 
     while (nodeIndex !== undefined) {
         // find the end index of the node
-        const end = Math.min(nodeIndex + index.nodeSize * 5, upperBound(nodeIndex, index._levelBounds));
+        const end = Math.min(nodeIndex + index.nodeSize * 4, upperBound(nodeIndex, index._levelBounds));
 
         // add child nodes to the queue
-        for (let pos = nodeIndex; pos < end; pos += 5) {
-            const childIndex = index.data[pos] | 0;
+        for (let pos = nodeIndex; pos < end; pos += 4) {
+            const childIndex = index._indices[pos >> 2] | 0;
 
-            const minLng = index.data[pos + 1];
-            const minLat = index.data[pos + 2];
-            const maxLng = index.data[pos + 3];
-            const maxLat = index.data[pos + 4];
+            const minLng = index._boxes[pos];
+            const minLat = index._boxes[pos + 1];
+            const maxLng = index._boxes[pos + 2];
+            const maxLat = index._boxes[pos + 3];
 
             const dist = boxDist(lng, lat, minLng, minLat, maxLng, maxLat, cosLat, sinLat);
 
-            if (nodeIndex < index.numItems * 5) { // leaf node
+            if (nodeIndex < index.numItems * 4) { // leaf node
                 // put a negative index if it's an item rather than a node, to recognize later
                 if (!filterFn || filterFn(childIndex)) q.push(-childIndex - 1, dist);
             } else {
@@ -49,6 +49,8 @@ export function around(index, lng, lat, maxResults = Infinity, maxDistance = Inf
 
         nodeIndex = q.pop();
     }
+
+    return result;
 }
 
 // binary search for the first value in the array bigger than the given
@@ -100,13 +102,12 @@ function boxDist(lng, lat, minLng, minLat, maxLng, maxLat, cosLat, sinLat) {
 
 // distance using spherical law of cosines; should be precise enough for our needs
 function greatCircleDist(lng, lat, lng2, lat2, cosLat, sinLat) {
-    var cosLngDelta = Math.cos((lng2 - lng) * rad);
+    const cosLngDelta = Math.cos((lng2 - lng) * rad);
     return earthRadius * Math.acos(greatCircleDistPart(lat2, cosLat, sinLat, cosLngDelta));
 }
 
 // partial greatCircleDist to reduce trigonometric calculations
 function greatCircleDistPart(lat, cosLat, sinLat, cosLngDelta) {
-    var d = sinLat * Math.sin(lat * rad) +
-            cosLat * Math.cos(lat * rad) * cosLngDelta;
+    const d = sinLat * Math.sin(lat * rad) + cosLat * Math.cos(lat * rad) * cosLngDelta;
     return Math.min(d, 1);
 }

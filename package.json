@@ -5,12 +5,19 @@
   "module": "index.mjs",
   "author": "Vladimir Agafonkin <agafonkin@gmail.com>",
   "license": "ISC",
+  "scripts": {
+    "test": "eslint index.mjs bench.mjs"
+  },
   "devDependencies": {
     "all-the-cities": "^2.0.1",
-    "esm": "^3.0.20",
-    "flatbush": "^2.0.4"
+    "eslint": "^5.8.0",
+    "eslint-config-mourner": "^3.0.0",
+    "flatbush": "^3.1.0"
   },
   "dependencies": {
-    "flatqueue": "^1.0.0"
+    "flatqueue": "^1.1.0"
+  },
+  "eslintConfig": {
+    "extends": "mourner"
   }
 }
