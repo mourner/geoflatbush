@@ -5,6 +5,18 @@ const earthRadius = 6371;
 const earthCircumference = 40007;
 const rad = Math.PI / 180;
 
+/**
+ * Finds the nearest items from a [Flatbush](https://github.com/mourner/flatbush) index to a geographic point.
+ *
+ * @param {Object} index [Flatbush](https://github.com/mourner/flatbush)) index
+ * @param {Number} lng Longitude
+ * @param {Number} lat Latitude
+ * @param {Number} [maxResults=Infinity] Maximum number of results to return
+ * @param {Number} [maxDistance=Infinity] Maximum distance in kilometers from lng,lat
+ * @param {Function} [filterFn] Filter function
+ *
+ * @returns {Array} An array of item indicies from the index nearest to the lng,lat
+ */
 export function around(index, lng, lat, maxResults = Infinity, maxDistance = Infinity, filterFn) {
     const result = [];
 
