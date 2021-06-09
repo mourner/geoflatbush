@@ -9,13 +9,15 @@
     "pretest": "eslint index.mjs bench.mjs test.mjs",
     "test": "node --experimental-modules test.mjs",
     "build": "rollup -c",
-    "bench": "node --experimental-modules bench.mjs"
+    "bench": "node --experimental-modules bench.mjs",
+    "docs": "documentation readme index.mjs --section=API"
   },
   "dependencies": {
     "flatqueue": "^1.1.0"
   },
   "devDependencies": {
     "all-the-cities": "^2.0.1",
+    "documentation": "^13.2.5",
     "eslint": "^5.12.1",
     "eslint-config-mourner": "^3.0.0",
     "flatbush": "^3.1.1",
