@@ -1,6 +1,4 @@
 
-import FlatQueue from 'flatqueue';
-
 const earthRadius = 6371;
 const earthCircumference = 40007;
 const rad = Math.PI / 180;
@@ -12,12 +10,13 @@ export function around(index, lng, lat, maxResults = Infinity, maxDistance = Inf
     const sinLat = Math.sin(lat * rad);
 
     // a distance-sorted priority queue that will contain both points and tree nodes
-    const q = new FlatQueue();
+    const q = index._queue;
 
     // index of the top tree node (the whole Earth)
     let nodeIndex = index._boxes.length - 4;
 
-    while (nodeIndex !== undefined) {
+    /* eslint-disable no-labels */
+    outer: while (nodeIndex !== undefined) {
         // find the end index of the node
         const end = Math.min(nodeIndex + index.nodeSize * 4, upperBound(nodeIndex, index._levelBounds));
 
@@ -42,14 +41,15 @@ export function around(index, lng, lat, maxResults = Infinity, maxDistance = Inf
 
         while (q.length && q.peek() < 0) {
             const dist = q.peekValue();
-            if (dist > maxDistance) return result;
+            if (dist > maxDistance) break outer;
             result.push(-q.pop() - 1);
-            if (result.length === maxResults) return result;
+            if (result.length === maxResults) break outer;
         }
 
         nodeIndex = q.pop();
     }
 
+    q.clear();
     return result;
 }
 
