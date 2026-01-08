@@ -1,8 +1,22 @@
 
+/** @import Flatbush from 'flatbush' */
+
 const earthRadius = 6371;
 const earthCircumference = 40007;
 const rad = Math.PI / 180;
 
+/**
+ * Search items in a given Flatbush index in order of geographical distance from the given point.
+ * Assumes the index contains bbox values of the form [minLng, minLat, maxLng, maxLat].
+ *
+ * @param {Flatbush} index
+ * @param {number} lng
+ * @param {number} lat
+ * @param {number} [maxResults=Infinity]
+ * @param {number} [maxDistance=Infinity]
+ * @param {(index: number) => boolean} [filterFn] An optional function for filtering the results.
+ * @returns {number[]} An array of indices of items found.
+ */
 export function around(index, lng, lat, maxResults = Infinity, maxDistance = Infinity, filterFn) {
     const result = [];
 
@@ -13,6 +27,7 @@ export function around(index, lng, lat, maxResults = Infinity, maxDistance = Inf
     const q = index._queue;
 
     // index of the top tree node (the whole Earth)
+    /** @type number | undefined */
     let nodeIndex = index._boxes.length - 4;
 
     /* eslint-disable no-labels */
@@ -39,9 +54,12 @@ export function around(index, lng, lat, maxResults = Infinity, maxDistance = Inf
             }
         }
 
+        // @ts-expect-error q.length check eliminates undefined values
         while (q.length && q.peek() < 0) {
             const dist = q.peekValue();
+            // @ts-expect-error
             if (dist > maxDistance) break outer;
+            // @ts-expect-error
             result.push(-q.pop() - 1);
             if (result.length === maxResults) break outer;
         }
@@ -53,7 +71,11 @@ export function around(index, lng, lat, maxResults = Infinity, maxDistance = Inf
     return result;
 }
 
-// binary search for the first value in the array bigger than the given
+/**
+ * Binary search for the first value in the array bigger than the given.
+ * @param {number} value
+ * @param {number[]} arr
+ */
 function upperBound(value, arr) {
     let i = 0;
     let j = arr.length - 1;
@@ -68,7 +90,17 @@ function upperBound(value, arr) {
     return arr[i];
 }
 
-// lower bound for distance from a location to points inside a bounding box
+/**
+ * Lower bound for distance from a location to points inside a bounding box.
+ * @param {number} lng
+ * @param {number} lat
+ * @param {number} minLng
+ * @param {number} minLat
+ * @param {number} maxLng
+ * @param {number} maxLat
+ * @param {number} cosLat
+ * @param {number} sinLat
+ */
 function boxDist(lng, lat, minLng, minLat, maxLng, maxLat, cosLat, sinLat) {
     if (minLng === maxLng && minLat === maxLat) {
         return greatCircleDist(lng, lat, minLng, minLat, cosLat, sinLat);
@@ -100,18 +132,40 @@ function boxDist(lng, lat, minLng, minLat, maxLng, maxLat, cosLat, sinLat) {
     return earthRadius * Math.acos(d);
 }
 
-// distance using spherical law of cosines; should be precise enough for our needs
+/**
+ * Distance using spherical law of cosines; should be precise enough for our needs.
+ * @param {number} lng
+ * @param {number} lat
+ * @param {number} lng2
+ * @param {number} lat2
+ * @param {number} cosLat
+ * @param {number} sinLat
+ */
 function greatCircleDist(lng, lat, lng2, lat2, cosLat, sinLat) {
     const cosLngDelta = Math.cos((lng2 - lng) * rad);
     return earthRadius * Math.acos(greatCircleDistPart(lat2, cosLat, sinLat, cosLngDelta));
 }
 
-// partial greatCircleDist to reduce trigonometric calculations
+/**
+ * Partial greatCircleDist to reduce trigonometric calculations.
+ * @param {number} lat
+ * @param {number} cosLat
+ * @param {number} sinLat
+ * @param {number} cosLngDelta
+ */
 function greatCircleDistPart(lat, cosLat, sinLat, cosLngDelta) {
     const d = sinLat * Math.sin(lat * rad) + cosLat * Math.cos(lat * rad) * cosLngDelta;
     return Math.min(d, 1);
 }
 
+/**
+ * Geographical distance between two points in kilometers using the Haversine distance formula.
+ * @param {number} lng
+ * @param {number} lat
+ * @param {number} lng2
+ * @param {number} lat2
+ * @returns {number}
+ */
 export function distance(lng, lat, lng2, lat2) {
     return greatCircleDist(lng, lat, lng2, lat2, Math.cos(lat * rad), Math.sin(lat * rad));
 }
