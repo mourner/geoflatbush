@@ -9,11 +9,11 @@ const rad = Math.PI / 180;
  * Search items in a given Flatbush index in order of geographical distance from the given point.
  * Assumes the index contains bbox values of the form [minLng, minLat, maxLng, maxLat].
  *
- * @param {Flatbush} index
- * @param {number} lng
- * @param {number} lat
- * @param {number} [maxResults=Infinity]
- * @param {number} [maxDistance=Infinity]
+ * @param {Flatbush} index Flatbush index.
+ * @param {number} lng Longitude.
+ * @param {number} lat Latitude.
+ * @param {number} [maxResults=Infinity] Number of items to return (if not provided, search will return all the items in the index, sorted).
+ * @param {number} [maxDistance=Infinity] Maximum distance to search for in kilometers.
  * @param {(index: number) => boolean} [filterFn] An optional function for filtering the results.
  * @returns {number[]} An array of indices of items found.
  */
@@ -160,10 +160,10 @@ function greatCircleDistPart(lat, cosLat, sinLat, cosLngDelta) {
 
 /**
  * Geographical distance between two points in kilometers using the Haversine distance formula.
- * @param {number} lng
- * @param {number} lat
- * @param {number} lng2
- * @param {number} lat2
+ * @param {number} lng Longitude of the first point.
+ * @param {number} lat Latitude of the first point.
+ * @param {number} lng2 Longitude of the second point.
+ * @param {number} lat2 Latitude of the second point.
  * @returns {number}
  */
 export function distance(lng, lat, lng2, lat2) {
