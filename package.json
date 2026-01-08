@@ -14,9 +14,9 @@
   },
   "devDependencies": {
     "all-the-cities": "^2.0.1",
-    "eslint": "^9.31.0",
+    "eslint": "^9.39.2",
     "eslint-config-mourner": "^4.1.0",
-    "flatbush": "^4.4.1"
+    "flatbush": "^4.5.0"
   },
   "eslintConfig": {
     "extends": "mourner"
