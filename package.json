@@ -10,16 +10,16 @@
   "author": "Vladimir Agafonkin <agafonkin@gmail.com>",
   "license": "ISC",
   "scripts": {
-    "pretest": "eslint *.js",
-    "test": "tsc && node test.js",
+    "pretest": "eslint *.js && tsc",
+    "test": "node test.js",
     "bench": "node bench.js"
   },
   "devDependencies": {
     "all-the-cities": "^2.0.1",
-    "eslint": "^9.39.2",
+    "eslint": "^10.4.0",
     "eslint-config-mourner": "^4.1.0",
-    "flatbush": "^4.5.0",
-    "typescript": "^5.9.3"
+    "flatbush": "^4.5.1",
+    "typescript": "^6.0.3"
   },
   "eslintConfig": {
     "extends": "mourner"
