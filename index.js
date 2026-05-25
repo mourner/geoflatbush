@@ -26,53 +26,40 @@ export function around(index, lng, lat, maxResults = Infinity, maxDistance = Inf
     // avoiding a Math.acos per box. Convert maxDistance to its equivalent threshold once.
     const negCosMaxDist = maxDistance === Infinity ? Infinity : -Math.cos(maxDistance / earthRadius);
 
-    const boxes = index._boxes;
-    const indices = index._indices;
+    const {_boxes: boxes, _indices: indices, _queue: q, _levelBounds: levelBounds} = index;
     const nodeSize4 = index.nodeSize * 4;
     const numItems4 = index.numItems * 4;
-    const levelBounds = index._levelBounds;
 
-    const q = index._queue;
+    // Tree nodes and leaves share the queue; encode leaves with LSB = 1 so we can tell them
+    // apart with `& 1`. Seed with the root node — any priority works since the queue is empty.
+    q.push((boxes.length - 4) << 1, 0);
 
-    /** @type number | undefined */
-    let nodeIndex = boxes.length - 4;
+    while (q.length) {
+        const top = q.ids[0];
+        // if the closest queued entry is a leaf, it's the next result in distance order
+        if (top & 1) {
+            if (q.values[0] > negCosMaxDist) break;
+            q.pop();
+            result.push(top >> 1);
+            if (result.length === maxResults) break;
+            continue;
+        }
 
-    /* eslint-disable no-labels */
-    outer: while (nodeIndex !== undefined) {
-        const end = Math.min(nodeIndex + nodeSize4, upperBound(nodeIndex, levelBounds));
+        q.pop();
+        const nodeIndex = top >> 1;
         const isLeafLevel = nodeIndex < numItems4;
+        const end = Math.min(nodeIndex + nodeSize4, upperBound(nodeIndex, levelBounds));
 
-        // add child nodes to the queue
         for (let pos = nodeIndex; pos < end; pos += 4) {
             const childIndex = indices[pos >> 2] | 0;
-
-            const minLng = boxes[pos];
-            const minLat = boxes[pos + 1];
-            const maxLng = boxes[pos + 2];
-            const maxLat = boxes[pos + 3];
-
-            const negCosDist = boxNegCosDist(lng, lat, minLng, minLat, maxLng, maxLat, cosLat, sinLat);
+            const negCosDist = boxNegCosDist(lng, lat, boxes[pos], boxes[pos + 1], boxes[pos + 2], boxes[pos + 3], cosLat, sinLat);
 
             if (isLeafLevel) {
-                // tag leaves with LSB so we can distinguish them on the queue without sign tricks
                 if (!filterFn || filterFn(childIndex)) q.push((childIndex << 1) | 1, negCosDist);
             } else {
                 q.push(childIndex << 1, negCosDist);
             }
         }
-
-        // pop any leaves currently at the top
-        // @ts-expect-error length check eliminates undefined
-        while (q.length && (q.peek() & 1)) {
-            // @ts-expect-error
-            if (q.peekValue() > negCosMaxDist) break outer;
-            // @ts-expect-error
-            result.push(q.pop() >> 1);
-            if (result.length === maxResults) break outer;
-        }
-
-        // @ts-expect-error
-        nodeIndex = q.length ? q.pop() >> 1 : undefined;
     }
 
     q.clear();
