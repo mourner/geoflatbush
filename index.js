@@ -67,6 +67,57 @@ export function around(index, lng, lat, maxResults = Infinity, maxDistance = Inf
 }
 
 /**
+ * Search items in a given Flatbush index within a geographical radius from the given point.
+ * Unlike `around`, results are returned in arbitrary order, which makes this significantly faster
+ * for radius queries because it avoids maintaining a priority queue and sorting.
+ * Assumes the index contains bbox values of the form [minLng, minLat, maxLng, maxLat].
+ *
+ * @param {Flatbush} index Flatbush index.
+ * @param {number} lng Longitude.
+ * @param {number} lat Latitude.
+ * @param {number} radius Search radius in kilometers.
+ * @param {(index: number) => boolean} [filterFn] An optional function for filtering the results.
+ * @returns {number[]} An array of indices of items found.
+ */
+export function within(index, lng, lat, radius, filterFn) {
+    const result = [];
+
+    const cosLat = Math.cos(lat * rad);
+    const sinLat = Math.sin(lat * rad);
+
+    // Compare in negative-cosine space (smaller = closer) to avoid a Math.acos per box.
+    const negCosRadius = -Math.cos(radius / earthRadius);
+
+    const {_boxes: boxes, _indices: indices, _levelBounds: levelBounds} = index;
+    const nodeSize4 = index.nodeSize * 4;
+    const numItems4 = index.numItems * 4;
+
+    // Plain stack-based depth-first traversal, pruning any node whose lower-bound distance
+    // exceeds the radius. Seed with the root node.
+    const stack = [boxes.length - 4];
+
+    while (stack.length) {
+        const nodeIndex = /** @type {number} */ (stack.pop());
+        const isLeafLevel = nodeIndex < numItems4;
+        const end = Math.min(nodeIndex + nodeSize4, upperBound(nodeIndex, levelBounds));
+
+        for (let pos = nodeIndex; pos < end; pos += 4) {
+            const negCosDist = boxNegCosDist(lng, lat, boxes[pos], boxes[pos + 1], boxes[pos + 2], boxes[pos + 3], cosLat, sinLat);
+            if (negCosDist > negCosRadius) continue; // bbox lower bound beyond radius — prune
+
+            const childIndex = indices[pos >> 2] | 0;
+            if (isLeafLevel) {
+                if (!filterFn || filterFn(childIndex)) result.push(childIndex);
+            } else {
+                stack.push(childIndex);
+            }
+        }
+    }
+
+    return result;
+}
+
+/**
  * Binary search for the first value in the array bigger than the given.
  * @param {number} value
  * @param {number[]} arr

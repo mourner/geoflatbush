@@ -25,6 +25,19 @@ const ids = around(index, 30.5, 50.5, 5); // returns 5 ids around Kyiv
 If given a `filterFn`, calls it on items that potentially belong to the results (passing the item's index)
 and only includes an item if the function returned a truthy value.
 
+#### `within(index, lng, lat, radius[, filterFn])`
+
+Returns an array of item indices from the given Flatbush index within a `radius` (in kilometers)
+of the given `lng, lat` point, in arbitrary order. Significantly faster than the equivalent
+`around` query with a `maxDistance`, since it avoids maintaining a priority queue and sorting results.
+
+```js
+const ids = within(index, 30.5, 50.5, 20); // returns ids within 20km of Kyiv
+```
+
+If given a `filterFn`, calls it on items that potentially belong to the results (passing the item's index)
+and only includes an item if the function returned a truthy value.
+
 #### `distance(lng, lat, lng2, lat2)`
 
 Returns the geographical distance between two given points in kilometers using the Haversine distance formula.

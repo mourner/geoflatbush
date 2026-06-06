@@ -1,7 +1,7 @@
 
 import cities from 'all-the-cities';
 import FlatBush from 'flatbush';
-import {around} from './index.js';
+import {around, within} from './index.js';
 
 const n = cities.length;
 const k = 100000;
@@ -37,3 +37,32 @@ console.timeEnd('2 closest for every point');
 console.time(`${k} random queries of 1 closest`);
 for (let i = 0; i < k; i++) around(index, randomPoints[i].lon, randomPoints[i].lat, 1);
 console.timeEnd(`${k} random queries of 1 closest`);
+
+// radius search vs. the equivalent maxDistance kNN query, for the same result set
+for (const radius of [100, 1000]) {
+    const n2 = within(index, -119.7051, 34.4363, radius).length;
+
+    console.time(`within ${radius}km (${n2} results)`);
+    within(index, -119.7051, 34.4363, radius);
+    console.timeEnd(`within ${radius}km (${n2} results)`);
+
+    console.time(`around within ${radius}km (${n2} results)`);
+    around(index, -119.7051, 34.4363, Infinity, radius);
+    console.timeEnd(`around within ${radius}km (${n2} results)`);
+}
+
+console.time(`${k} random within 50km queries`);
+for (let i = 0; i < k; i++) within(index, randomPoints[i].lon, randomPoints[i].lat, 50);
+console.timeEnd(`${k} random within 50km queries`);
+
+console.time(`${k} random around within 50km queries`);
+for (let i = 0; i < k; i++) around(index, randomPoints[i].lon, randomPoints[i].lat, Infinity, 50);
+console.timeEnd(`${k} random around within 50km queries`);
+
+console.time(`${k} random within 500km queries`);
+for (let i = 0; i < k; i++) within(index, randomPoints[i].lon, randomPoints[i].lat, 500);
+console.timeEnd(`${k} random within 500km queries`);
+
+console.time(`${k} random around within 500km queries`);
+for (let i = 0; i < k; i++) around(index, randomPoints[i].lon, randomPoints[i].lat, Infinity, 500);
+console.timeEnd(`${k} random around within 500km queries`);
