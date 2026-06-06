@@ -1,6 +1,6 @@
 {
   "name": "geoflatbush",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "main": "index.js",
   "type": "module",
   "exports": "./index.js",
