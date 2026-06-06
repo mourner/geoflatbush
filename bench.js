@@ -4,65 +4,105 @@ import FlatBush from 'flatbush';
 import {around, within} from './index.js';
 
 const n = cities.length;
-const k = 100000;
+const REPS = 5; // repetitions per search benchmark
 
-const randomPoints = [];
-for (let i = 0; i < k; i++) randomPoints.push({
-    lon: -180 + 360 * Math.random(),
-    lat: -60 + 140 * Math.random()
-});
+console.log(`${n} cities`);
+console.log(`runs: ${REPS}`);
 
-console.time(`index ${n} points`);
-const index = new FlatBush(cities.length, 4);
-for (const {lon, lat} of cities) index.add(lon, lat, lon, lat);
-index.finish();
-console.timeEnd(`index ${n} points`);
+// Seeded PRNG (mulberry32) so queries are identical across process runs,
+// making before/after comparisons of an optimization meaningful.
+function mulberry32(seed) {
+    return function () {
+        seed |= 0;
+        seed = (seed + 0x6D2B79F5) | 0;
+        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+const random = mulberry32(0x9e3779b9);
 
-console.time('query 1000 closest');
-around(index, -119.7051, 34.4363, 1000);
-console.timeEnd('query 1000 closest');
-
-console.time('query 50000 closest');
-around(index, -119.7051, 34.4363, 50000);
-console.timeEnd('query 50000 closest');
-
-console.time(`query all ${n}`);
-around(index, -119.7051, 34.4363);
-console.timeEnd(`query all ${n}`);
-
-console.time('2 closest for every point');
-for (const c of cities) around(index, c.lon, c.lat, 2);
-console.timeEnd('2 closest for every point');
-
-console.time(`${k} random queries of 1 closest`);
-for (let i = 0; i < k; i++) around(index, randomPoints[i].lon, randomPoints[i].lat, 1);
-console.timeEnd(`${k} random queries of 1 closest`);
-
-// radius search vs. the equivalent maxDistance kNN query, for the same result set
-for (const radius of [100, 1000]) {
-    const n2 = within(index, -119.7051, 34.4363, radius).length;
-
-    console.time(`within ${radius}km (${n2} results)`);
-    within(index, -119.7051, 34.4363, radius);
-    console.timeEnd(`within ${radius}km (${n2} results)`);
-
-    console.time(`around within ${radius}km (${n2} results)`);
-    around(index, -119.7051, 34.4363, Infinity, radius);
-    console.timeEnd(`around within ${radius}km (${n2} results)`);
+function makeRandomPoints(count) {
+    const points = [];
+    for (let i = 0; i < count; i++) {
+        points.push(-180 + 360 * random(), -60 + 140 * random());
+    }
+    return points;
 }
 
-console.time(`${k} random within 50km queries`);
-for (let i = 0; i < k; i++) within(index, randomPoints[i].lon, randomPoints[i].lat, 50);
-console.timeEnd(`${k} random within 50km queries`);
+const ms = t => `${t.toFixed(2)}ms`.padStart(9);
 
-console.time(`${k} random around within 50km queries`);
-for (let i = 0; i < k; i++) around(index, randomPoints[i].lon, randomPoints[i].lat, Infinity, 50);
-console.timeEnd(`${k} random around within 50km queries`);
+// min + mean±std over an array of timings (ms)
+function stats(times) {
+    const len = times.length;
+    const min = Math.min(...times);
+    const mean = times.reduce((a, b) => a + b, 0) / len;
+    const std = Math.sqrt(times.reduce((a, b) => a + (b - mean) ** 2, 0) / len);
+    return `min ${ms(min)}   mean ${ms(mean)} ± ${std.toFixed(2)}ms`;
+}
 
-console.time(`${k} random within 500km queries`);
-for (let i = 0; i < k; i++) within(index, randomPoints[i].lon, randomPoints[i].lat, 500);
-console.timeEnd(`${k} random within 500km queries`);
+function buildIndex() {
+    const index = new FlatBush(n, 4);
+    for (const {lon, lat} of cities) index.add(lon, lat, lon, lat);
+    index.finish();
+    return index;
+}
 
-console.time(`${k} random around within 500km queries`);
-for (let i = 0; i < k; i++) around(index, randomPoints[i].lon, randomPoints[i].lat, Infinity, 500);
-console.timeEnd(`${k} random around within 500km queries`);
+const index = buildIndex();
+console.log(`index size: ${index.data.byteLength.toLocaleString()} bytes`);
+
+// accumulator to prevent dead-code elimination of search results
+let sink = 0;
+
+// run `fn` once as warmup, then time it REPS times
+function bench(name, fn) {
+    sink += fn();
+    const times = [];
+    for (let r = 0; r < REPS; r++) {
+        const start = performance.now();
+        sink += fn();
+        times.push(performance.now() - start);
+    }
+    console.log(`${name.padEnd(30)}${stats(times)}`);
+}
+
+// query sets scaled so each test does roughly comparable total work (~100-200ms)
+const center = [-119.7051, 34.4363];
+
+bench('around 1000 closest (×1500)', () => {
+    let s = 0;
+    for (let i = 0; i < 1500; i++) s += around(index, center[0], center[1], 1000).length;
+    return s;
+});
+
+bench(`around all ${n} (×6)`, () => {
+    let s = 0;
+    for (let i = 0; i < 6; i++) s += around(index, center[0], center[1]).length;
+    return s;
+});
+
+const pts1 = makeRandomPoints(20000);
+bench('around 1 closest (×20000)', () => {
+    let s = 0;
+    for (let i = 0; i < pts1.length; i += 2) s += around(index, pts1[i], pts1[i + 1], 1).length;
+    return s;
+});
+
+// radius search vs. the equivalent maxDistance kNN query, over random points for the same result set
+for (const [radius, points] of [[50, makeRandomPoints(30000)], [500, makeRandomPoints(3500)]]) {
+    const calls = points.length / 2;
+
+    bench(`within ${radius}km (×${calls})`, () => {
+        let s = 0;
+        for (let i = 0; i < points.length; i += 2) s += within(index, points[i], points[i + 1], radius).length;
+        return s;
+    });
+
+    bench(`around within ${radius}km (×${calls})`, () => {
+        let s = 0;
+        for (let i = 0; i < points.length; i += 2) s += around(index, points[i], points[i + 1], Infinity, radius).length;
+        return s;
+    });
+}
+
+if (sink < 0) console.log(sink); // keep sink observable
