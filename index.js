@@ -88,27 +88,34 @@ export function within(index, lng, lat, radius, filterFn) {
     // Compare in negative-cosine space (smaller = closer) to avoid a Math.acos per box.
     const negCosRadius = -Math.cos(radius / earthRadius);
 
+    // Angular radius in degrees. The latitude gap to a box is a trig-free lower bound on the
+    // distance to it (great-circle distance is always >= the latitude difference), so anything
+    // more than this many degrees away in latitude can be pruned without the full distance test.
+    const angularRadius = radius / earthRadius / rad;
+
     // A box can only be fully inside the radius if its diameter fits within 2 * radius; its
     // latitude span is a cheap (trig-free) lower bound on that diameter, letting us skip the
     // containment test on big nodes where it can never apply (the common case for small radii).
-    const maxLatSpan = 2 * radius / earthRadius / rad;
+    const maxLatSpan = 2 * angularRadius;
 
     const {_boxes: boxes, _indices: indices, _levelBounds: levelBounds} = index;
     const nodeSize4 = index.nodeSize * 4;
-    const numItems4 = index.numItems * 4;
 
     // Plain stack-based depth-first traversal, pruning any node whose lower-bound distance
-    // exceeds the radius. Node offsets are multiples of 4, so we reuse the LSB as a flag
-    // marking a node whose bbox is fully inside the radius — its whole subtree is collected
-    // without any further distance tests. Seed with the (not contained) root node.
-    const stack = [boxes.length - 4];
+    // exceeds the radius. We carry each node's tree level on the stack alongside its offset
+    // (rather than re-deriving it with a binary search) so the node end is a direct lookup.
+    // Node offsets are multiples of 4, so we reuse the LSB as a flag marking a node whose bbox
+    // is fully inside the radius — its whole subtree is collected without any further distance
+    // tests. Seed with the (not contained) root node at the top level.
+    const stack = [boxes.length - 4, levelBounds.length - 1];
 
     while (stack.length) {
+        const level = /** @type {number} */ (stack.pop());
         const top = /** @type {number} */ (stack.pop());
         const contained = (top & 1) === 1;
         const nodeIndex = top & ~1;
-        const isLeafLevel = nodeIndex < numItems4;
-        const end = Math.min(nodeIndex + nodeSize4, upperBound(nodeIndex, levelBounds));
+        const isLeafLevel = level === 0;
+        const end = Math.min(nodeIndex + nodeSize4, levelBounds[level]);
 
         for (let pos = nodeIndex; pos < end; pos += 4) {
             const childIndex = indices[pos >> 2] | 0;
@@ -118,12 +125,18 @@ export function within(index, lng, lat, radius, filterFn) {
                 if (isLeafLevel) {
                     if (!filterFn || filterFn(childIndex)) result.push(childIndex);
                 } else {
-                    stack.push(childIndex | 1);
+                    stack.push(childIndex | 1, level - 1);
                 }
                 continue;
             }
 
-            const negCosDist = boxNegCosDist(lng, lat, boxes[pos], boxes[pos + 1], boxes[pos + 2], boxes[pos + 3], cosLat, sinLat);
+            // cheap trig-free pre-prune: the latitude gap is a lower bound on the distance
+            const minLat = boxes[pos + 1];
+            const maxLat = boxes[pos + 3];
+            const latGap = lat > maxLat ? lat - maxLat : lat < minLat ? minLat - lat : 0;
+            if (latGap > angularRadius) continue;
+
+            const negCosDist = boxNegCosDist(lng, lat, boxes[pos], minLat, boxes[pos + 2], maxLat, cosLat, sinLat);
             if (negCosDist > negCosRadius) continue; // bbox lower bound beyond radius — prune
 
             if (isLeafLevel) {
@@ -131,11 +144,11 @@ export function within(index, lng, lat, radius, filterFn) {
                 if (!filterFn || filterFn(childIndex)) result.push(childIndex);
             } else if (boxes[pos + 3] - boxes[pos + 1] > maxLatSpan) {
                 // box is too tall to possibly fit inside the radius — skip the containment test
-                stack.push(childIndex);
+                stack.push(childIndex, level - 1);
             } else {
                 // flag the node as contained if even its farthest point is within the radius
                 const negCosFarDist = boxNegCosFarDist(lng, boxes[pos], boxes[pos + 1], boxes[pos + 2], boxes[pos + 3], cosLat, sinLat);
-                stack.push(negCosFarDist <= negCosRadius ? childIndex | 1 : childIndex);
+                stack.push(negCosFarDist <= negCosRadius ? childIndex | 1 : childIndex, level - 1);
             }
         }
     }
