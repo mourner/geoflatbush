@@ -63,10 +63,12 @@ function bench(name, fn) {
         sink += fn();
         times.push(performance.now() - start);
     }
-    console.log(`${name.padEnd(30)}${stats(times)}`);
+    console.log(`${name.padEnd(34)}${stats(times)}`);
 }
 
-// query sets scaled so each test does roughly comparable total work (~100-200ms)
+// query sets scaled so each test does roughly comparable total work (~100-200ms). The two
+// within/around pairs below share one query set per radius (so the times are directly
+// comparable), sized for the slower `around` member — the much faster `within` line is the point.
 const center = [-119.7051, 34.4363];
 
 bench('around 1000 closest (×1500)', () => {
@@ -104,5 +106,14 @@ for (const [radius, points] of [[50, makeRandomPoints(30000)], [500, makeRandomP
         return s;
     });
 }
+
+// clustering-style pattern: one radius query per item over the same index (e.g. DBSCAN),
+// the workload that benefits most from `within` reusing its scratch stack across calls
+const clusterPts = makeRandomPoints(350000);
+bench(`within 10km clustering (×${clusterPts.length / 2})`, () => {
+    let s = 0;
+    for (let i = 0; i < clusterPts.length; i += 2) s += within(index, clusterPts[i], clusterPts[i + 1], 10).length;
+    return s;
+});
 
 if (sink < 0) console.log(sink); // keep sink observable

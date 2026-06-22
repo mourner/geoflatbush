@@ -38,6 +38,8 @@ const ids = within(index, 30.5, 50.5, 20); // returns ids within 20km of Kyiv
 If given a `filterFn`, calls it on items that potentially belong to the results (passing the item's index)
 and only includes an item if the function returned a truthy value.
 
+Note: `within` is not re-entrant — don't call `within` from inside its own `filterFn`.
+
 #### `distance(lng, lat, lng2, lat2)`
 
 Returns the geographical distance between two given points in kilometers using the Haversine distance formula.

@@ -4,6 +4,11 @@
 const earthRadius = 6371;
 const rad = Math.PI / 180;
 
+// Module-level scratch stack reused across `within` calls to avoid per-call allocation.
+// This makes `within` non-re-entrant — see the note on its declaration.
+/** @type {number[]} */
+const withinStack = [];
+
 /**
  * Search items in a given Flatbush index in order of geographical distance from the given point.
  * Assumes the index contains bbox values of the form [minLng, minLat, maxLng, maxLat].
@@ -78,6 +83,8 @@ export function around(index, lng, lat, maxResults = Infinity, maxDistance = Inf
  * @param {number} radius Search radius in kilometers.
  * @param {(index: number) => boolean} [filterFn] An optional function for filtering the results.
  * @returns {number[]} An array of indices of items found.
+ *
+ * Note: `within` is not re-entrant — don't call `within` from inside its own `filterFn`.
  */
 export function within(index, lng, lat, radius, filterFn) {
     const result = [];
@@ -93,10 +100,22 @@ export function within(index, lng, lat, radius, filterFn) {
     // more than this many degrees away in latitude can be pruned without the full distance test.
     const angularRadius = radius / earthRadius / rad;
 
-    // A box can only be fully inside the radius if its diameter fits within 2 * radius; its
-    // latitude span is a cheap (trig-free) lower bound on that diameter, letting us skip the
-    // containment test on big nodes where it can never apply (the common case for small radii).
-    const maxLatSpan = 2 * angularRadius;
+    // Conservative planar bracket setup (degrees). Over the query's latitude band
+    // B = [|lat| - ρ, |lat| + ρ] the only varying metric term, cos²φ, is bounded by cmin2/cmax2,
+    // which rigorously bracket the great-circle distance with trig-free arithmetic:
+    //   latGap² + cmin2·lngGap²  ≤  σ²  ≤  latGap² + cmax2·lngGap²   (all in degrees²)
+    // so most boxes are pruned/accepted without any trig; only the boundary band needs the exact
+    // spherical test. No special-casing for large radii: the lower bound's only premise (the
+    // disk's geodesic convexity) can fail only when ρ ≥ π/2, but that forces bandHi ≥ 90 and hence
+    // cmin2 = 0, collapsing it to the always-valid latitude prune. cmin2 > 0 implies ρ < π/2.
+    const rho2 = angularRadius * angularRadius;
+    const latAbs = lat < 0 ? -lat : lat;
+    const bandHi = latAbs + angularRadius;
+    const bandLo = latAbs - angularRadius;
+    const cosMax = Math.cos(Math.max(0, bandLo) * rad);        // largest cosφ in B (1 if B straddles equator)
+    const cosMin = bandHi >= 90 ? 0 : Math.cos(bandHi * rad);  // smallest cosφ in B (0 if B reaches a pole)
+    const cmax2 = cosMax * cosMax;
+    const cmin2 = cosMin * cosMin;
 
     const {_boxes: boxes, _indices: indices, _levelBounds: levelBounds} = index;
     const nodeSize4 = index.nodeSize * 4;
@@ -104,81 +123,59 @@ export function within(index, lng, lat, radius, filterFn) {
     // Plain stack-based depth-first traversal, pruning any node whose lower-bound distance
     // exceeds the radius. We carry each node's tree level on the stack alongside its offset
     // (rather than re-deriving it with a binary search) so the node end is a direct lookup.
-    // Node offsets are multiples of 4, so we reuse the LSB as a flag marking a node whose bbox
-    // is fully inside the radius — its whole subtree is collected without any further distance
-    // tests. Seed with the (not contained) root node at the top level.
-    const stack = [boxes.length - 4, levelBounds.length - 1];
+    // Seed with the root node at the top level.
+    const stack = withinStack;
+    let sp = 0;
+    stack[sp++] = boxes.length - 4;
+    stack[sp++] = levelBounds.length - 1;
 
-    while (stack.length) {
-        const level = /** @type {number} */ (stack.pop());
-        const top = /** @type {number} */ (stack.pop());
-        const contained = (top & 1) === 1;
-        const nodeIndex = top & ~1;
+    while (sp > 0) {
+        const level = stack[--sp];
+        const nodeIndex = stack[--sp];
         const isLeafLevel = level === 0;
         const end = Math.min(nodeIndex + nodeSize4, levelBounds[level]);
 
         for (let pos = nodeIndex; pos < end; pos += 4) {
             const childIndex = indices[pos >> 2] | 0;
 
-            if (contained) {
-                // whole subtree is inside the radius; skip distance tests entirely
-                if (isLeafLevel) {
-                    if (!filterFn || filterFn(childIndex)) result.push(childIndex);
-                } else {
-                    stack.push(childIndex | 1, level - 1);
-                }
-                continue;
-            }
-
             // cheap trig-free pre-prune: the latitude gap is a lower bound on the distance
+            const minLng = boxes[pos];
             const minLat = boxes[pos + 1];
+            const maxLng = boxes[pos + 2];
             const maxLat = boxes[pos + 3];
             const latGap = lat > maxLat ? lat - maxLat : lat < minLat ? minLat - lat : 0;
             if (latGap > angularRadius) continue;
 
-            const negCosDist = boxNegCosDist(lng, lat, boxes[pos], minLat, boxes[pos + 2], maxLat, cosLat, sinLat);
-            if (negCosDist > negCosRadius) continue; // bbox lower bound beyond radius — prune
+            // longitude gap to the nearest box edge, wrapped to [0, 180] (trig-free)
+            let lngGap;
+            if (lng >= minLng && lng <= maxLng) {
+                lngGap = 0;
+            } else {
+                let w = minLng - lng; if (w < 0) w += 360;
+                let e = lng - maxLng; if (e < 0) e += 360;
+                lngGap = w <= e ? w : e;
+                if (lngGap > 180) lngGap = 360 - lngGap;
+            }
+            const latGap2 = latGap * latGap;
+            const lngGap2 = lngGap * lngGap;
+            if (latGap2 + cmin2 * lngGap2 > rho2) continue; // rigorous lower bound beyond radius — prune (no trig)
+
+            // For leaf points, accept outright when the upper bound is also within radius; only the
+            // boundary band (lower bound in, upper bound out) falls through to the exact spherical test.
+            if (isLeafLevel && latGap2 + cmax2 * lngGap2 > rho2 &&
+                boxNegCosDist(lng, lat, minLng, minLat, maxLng, maxLat, cosLat, sinLat) > negCosRadius) continue;
 
             if (isLeafLevel) {
-                // leaf items are points; passing the lower-bound test means they're within range
+                // leaf items are points; reaching here means they're within range
                 if (!filterFn || filterFn(childIndex)) result.push(childIndex);
-            } else if (boxes[pos + 3] - boxes[pos + 1] > maxLatSpan) {
-                // box is too tall to possibly fit inside the radius — skip the containment test
-                stack.push(childIndex, level - 1);
             } else {
-                // flag the node as contained if even its farthest point is within the radius
-                const negCosFarDist = boxNegCosFarDist(lng, boxes[pos], boxes[pos + 1], boxes[pos + 2], boxes[pos + 3], cosLat, sinLat);
-                stack.push(negCosFarDist <= negCosRadius ? childIndex | 1 : childIndex, level - 1);
+                stack[sp++] = childIndex;
+                stack[sp++] = level - 1;
             }
         }
     }
 
     return result;
-}
-
-/**
- * Upper bound for distance from a location to points inside a bounding box,
- * expressed as the negative cosine of the angular distance (monotonic with real distance).
- * The farthest point of a lng/lat box is always one of its corners.
- * @param {number} lng
- * @param {number} minLng
- * @param {number} minLat
- * @param {number} maxLng
- * @param {number} maxLat
- * @param {number} cosLat
- * @param {number} sinLat
- */
-function boxNegCosFarDist(lng, minLng, minLat, maxLng, maxLat, cosLat, sinLat) {
-    // farthest longitude: the one whose delta is closest to 180°.
-    // cosLat * cos(lat) >= 0, so the minimizing longitude is the same for any latitude.
-    const lo = minLng - lng;
-    const hi = maxLng - lng;
-    const cosLngDelta = (lo <= 180 && hi >= 180) || (lo <= -180 && hi >= -180) ?
-        -1 : Math.min(Math.cos(lo * rad), Math.cos(hi * rad));
-
-    // farthest of the two latitude corners (smallest cosine = largest distance)
-    const d = Math.min(cosAngular(minLat, cosLat, sinLat, cosLngDelta), cosAngular(maxLat, cosLat, sinLat, cosLngDelta));
-    return -d;
 }
 
 /**
@@ -223,15 +220,17 @@ function boxNegCosDist(lng, lat, minLng, minLat, maxLng, maxLat, cosLat, sinLat)
 
     // query point is west or east of the bounding box;
     // calculate the extremum for great circle distance from query point to the closest longitude
-    const closestLng = (minLng - lng + 360) % 360 <= (lng - maxLng + 360) % 360 ? minLng : maxLng;
+    let westGap = minLng - lng; if (westGap < 0) westGap += 360;
+    let eastGap = lng - maxLng; if (eastGap < 0) eastGap += 360;
+    const closestLng = westGap <= eastGap ? minLng : maxLng;
     const cosLngDelta = Math.cos((closestLng - lng) * rad);
-    const extremumLat = Math.atan(sinLat / (cosLat * cosLngDelta)) / rad;
 
     // bigger d = closer; take the max of candidate cosines as the lower bound on distance
     const dMin = cosAngular(minLat, cosLat, sinLat, cosLngDelta);
     if (minLat === maxLat) return -dMin; // point item — skip second corner and extremum check
     let d = Math.max(dMin, cosAngular(maxLat, cosLat, sinLat, cosLngDelta));
 
+    const extremumLat = Math.atan(sinLat / (cosLat * cosLngDelta)) / rad;
     if (extremumLat > minLat && extremumLat < maxLat) {
         d = Math.max(d, cosAngular(extremumLat, cosLat, sinLat, cosLngDelta));
     }
