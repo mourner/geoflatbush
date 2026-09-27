@@ -13,6 +13,15 @@ test('performs search according to maxResults', () => {
     assert.deepEqual(points.map(i => cities[i].name).join(', '), 'Mission Canyon, Santa Barbara, Montecito, Summerland, Goleta');
 });
 
+test('maxResults of 0 returns nothing', () => {
+    const tiny = new Flatbush(3);
+    tiny.add(0, 0, 0, 0);
+    tiny.add(10, 0, 10, 0);
+    tiny.add(20, 0, 20, 0);
+    tiny.finish();
+    assert.deepEqual(around(tiny, 0, 0, 0), []);
+});
+
 test('performs search within maxDistance', () => {
     const points = around(index, 30.5, 50.5, Infinity, 20);
     assert.deepEqual(points.map(i => cities[i].name).join(', '),

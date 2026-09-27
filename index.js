@@ -22,7 +22,10 @@ const withinStack = [];
  * @returns {number[]} An array of indices of items found.
  */
 export function around(index, lng, lat, maxResults = Infinity, maxDistance = Infinity, filterFn) {
+    /** @type {number[]} */
     const result = [];
+    // 0 means no items. A missing count is Infinity from the default parameter.
+    if (!(maxResults > 0)) return result;
 
     const cosLat = Math.cos(lat * rad);
     const sinLat = Math.sin(lat * rad);
